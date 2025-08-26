@@ -141,8 +141,8 @@ func init() {
 		getSRv6Stats,
 		nil,
 		showCmdOptionSid,
-  )
-  sdc.RegisterCliPath(
+	)
+	sdc.RegisterCliPath(
 		[]string{"SHOW", "queue", "counters"},
 		getQueueCounters,
 		nil,
@@ -192,5 +192,19 @@ func init() {
 		getInterfaceSwitchportStatus,
 		nil,
 		showCmdOptionInterface,
+	)
+	sdc.RegisterCliPath(
+		[]string{"SHOW", "dropcounters", "counts"},
+		getDropCounters,
+		nil,
+		showCmdOptionGroup,
+		showCmdOptionCounterType,
+		sdc.UnimplementedOption(showCmdOptionNamespace),
+		showCmdOptionVerbose,
+	)
+	sdc.RegisterCliPath(
+		[]string{"SHOW", "dropcounters", "capabilities"},
+		getDropcountersCapabilities,
+		nil,
 	)
 }
