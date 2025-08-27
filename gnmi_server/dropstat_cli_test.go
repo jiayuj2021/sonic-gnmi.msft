@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pb "github.com/openconfig/gnmi/proto/gnmi"
-	sc "github.com/sonic-net/sonic-gnmi/show_client"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -117,8 +116,6 @@ func TestGetDropCounters(t *testing.T) {
 				AddDataSet(t, CountersDbNum, debugMapFileName)
 				AddDataSet(t, CountersDbNum, debugCountersFileName)
 				AddDataSet(t, ConfigDbNum, configDebugCounterFileName)
-				// Clear lookup caches to reflect new debug mapping
-				sc.ClearDropstatStatCaches()
 			},
 		},
 		{
@@ -150,8 +147,6 @@ func TestGetDropCounters(t *testing.T) {
 				AddDataSet(t, CountersDbNum, debugCountersFileName)
 				AddDataSet(t, ConfigDbNum, configDebugCounterFileName)
 				AddDataSet(t, ApplDbNum, portTableFileName)
-				// Clear lookup caches to reflect new debug mapping
-				sc.ClearDropstatStatCaches()
 			},
 		},
 	}

@@ -63,6 +63,9 @@ func getDropCounters(options sdc.OptionMap) ([]byte, error) {
 		}
 	}
 
+	// Always refresh <name, stat> maps so config changes are picked up immediately
+	ClearDropstatStatCaches()
+
 	// Collect port-level drop counters as JSON-like map and return marshaled JSON
 	portMap := showPortDropCounts(group, counterType)
 	if portMap != nil {
