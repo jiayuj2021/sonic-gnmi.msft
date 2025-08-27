@@ -41,7 +41,10 @@ var stdPortHeadersMap = map[string]string{
 	"SAI_PORT_STAT_IF_OUT_DISCARDS": "TX_DROPS",
 }
 
-// fetch the port-level drop counters as JSON.
+// Fetch the port-level drop counters as JSON.
+// Currently, only port-level drop counts are supported and switch-level drop counts are not supported
+// Most VOQ and fabric platforms are multi‑ASIC. Because the current implementation doesn't perform per‑ASIC aggregation, switch‑level counters are not supported yet.
+// The switch_type field is empty on FW-backend T0/T1 devices, so implementing switch-level counters isn’t necessary now.
 func getDropCounters(options sdc.OptionMap) ([]byte, error) {
 	var group string
 	var counterType string
@@ -121,6 +124,9 @@ func showPortDropCounts(group string, counterType string) map[string]map[string]
 }
 
 // Gather the list of counters to be counted, filtering out those that are not in the group or not the right counter type.
+// admin@sonic:~$  redis-cli -n 2 HGETALL "COUNTERS_DEBUG_NAME_PORT_STAT_MAP"
+// 1) "DEBUG_2"
+// 2) "SAI_PORT_STAT_IN_CONFIGURED_DROP_REASONS_0_DROPPED_PKTS"
 func gatherCounters(stdCounters []string, objectStatMap string, group string, counterType string) []string {
 	// configured counters returns stat names (values)
 	configured := getConfiguredCounters(objectStatMap)
@@ -138,6 +144,13 @@ func gatherCounters(stdCounters []string, objectStatMap string, group string, co
 }
 
 // build a mapping from counter stat name to header alias.
+// Resulting mapping:
+//
+//	map[string]string{
+//	   "SAI_PORT_STAT_IF_IN_ERRORS":    "RX_ERR",    // from stdPortHeadersMap
+//	   "SAI_PORT_STAT_IF_IN_DISCARDS":  "RX_DROPS",  // from stdPortHeadersMap
+//	   "SAI_PORT_STAT_IN_CONFIGURED_DROP_REASONS_0_DROPPED_PKTS": "BAD_DROPS", // from DEBUG_COUNTER alias
+//	}
 func gatherHeadersMap(counters []string, objectStatMap string) map[string]string {
 	headers := make(map[string]string, len(counters))
 	// reverse stat lookup: stat -> counterName
@@ -160,6 +173,11 @@ func gatherHeadersMap(counters []string, objectStatMap string) map[string]string
 }
 
 // Get the drop counts for an individual counter.
+// admin@sonic:~$  redis-cli -n 2 HGETALL "COUNTERS:oid:0x1000000000002"
+//  1. "SAI_PORT_STAT_IN_DROPPED_PKTS"
+//  2. "0"
+//  3. "SAI_PORT_STAT_OUT_DROPPED_PKTS"
+//  4. "0"
 func getCounts(counters []string, oid string) map[string]int64 {
 	res := make(map[string]int64, len(counters))
 
@@ -208,6 +226,12 @@ func getCountsTable(counters []string, objectTable string) (map[string]map[strin
 }
 
 // Retrieves the mapping from counter name -> object stat for the given object type.
+// Resulting mapping:
+//
+//	map[string]string{
+//	   "DEBUG_2": "SAI_PORT_STAT_IN_CONFIGURED_DROP_REASONS_0_DROPPED_PKTS",
+//	    // ...other configured counters...
+//	}
 func GetStatLookup(objectStatMap string) map[string]string {
 	if v, ok := statLookupCache[objectStatMap]; ok {
 		return v
@@ -228,7 +252,13 @@ func GetStatLookup(objectStatMap string) map[string]string {
 	return res
 }
 
-// GetReverseStatLookup returns mapping objectStat -> counterName for objectStatMap.
+// Retrieves the mapping from object stat ->  counter name for the given object type.
+// Resulting mapping:
+//
+//	map[string]string{
+//	  "SAI_PORT_STAT_IN_CONFIGURED_DROP_REASONS_0_DROPPED_PKTS": "DEBUG_2",
+//	   // ...other stat->name entries...
+//	}
 func GetReverseStatLookup(objectStatMap string) map[string]string {
 	if v, ok := reverseStatLookupCache[objectStatMap]; ok {
 		return v
@@ -333,6 +363,20 @@ func isType(counterStat string, objectStatMap string, counterType string) bool {
 }
 
 // getEntry returns the CONFIG_DB DEBUG_COUNTER row for a given counterName.
+// admin@sonic:~$ show dropcounters configuration
+// Counter    Alias      Group    Type                Reasons           Description
+// ---------  ---------  -------  ------------------  ----------------  -----------------------
+// DEBUG_2    BAD_DROPS  BAD      PORT_INGRESS_DROPS  ACL_ANY           More port ingress drops
+//
+// admin@sonic:~$ redis-cli -n 4 HGETALL "DEBUG_COUNTER|DEBUG_2"
+// 1) "alias"
+// 2) "BAD_DROPS"
+// 3) "desc"
+// 4) "More port ingress drops"
+// 5) "group"
+// 6) "BAD"
+// 7) "type"
+// 8) "PORT_INGRESS_DROPS"
 func getEntry(counterName string) (map[string]interface{}, bool) {
 	row, err := GetMapFromQueries([][]string{{"CONFIG_DB", "DEBUG_COUNTER", counterName}})
 	if err != nil || row == nil || len(row) == 0 {
