@@ -1199,3 +1199,70 @@ func getInterfaceFlap(options sdc.OptionMap) ([]byte, error) {
 
 	return json.Marshal(rows)
 }
+
+// 'expected' subcommand ("show interface neighbor expected")
+// admin@sonic: redis-cli -n 4 HGETALL 'DEVICE_NEIGHBOR|Ethernet2'
+// 1) "name"
+// 2) "DEVICE01T1"
+// 3) "port"
+// 4) "Ethernet1"
+//
+// admin@sonic: redis-cli -n 4 HGETALL "DEVICE_NEIGHBOR_METADATA|DEVICE01T1"
+// 1) "hwsku"
+// 2) "Arista-VM"
+// 3) "mgmt_addr"
+// 4) "0.0.0.0"
+// 5) "type"
+// 6) "BackEndLeafRouter"
+func getInterfaceNeighborExpected(options sdc.OptionMap) ([]byte, error) {
+	// Fetch DEVICE_NEIGHBOR
+	neighborTbl, err := GetMapFromQueries([][]string{{"CONFIG_DB", "DEVICE_NEIGHBOR"}})
+	if err != nil {
+		log.Errorf("Failed to get DEVICE_NEIGHBOR: %v", err)
+		return nil, err
+	}
+
+	// Fetch DEVICE_NEIGHBOR_METADATA
+	metaTbl, err := GetMapFromQueries([][]string{{"CONFIG_DB", "DEVICE_NEIGHBOR_METADATA"}})
+	if err != nil {
+		log.Errorf("Failed to get DEVICE_NEIGHBOR_METADATA: %v", err)
+		return nil, err
+	}
+
+	out := make(map[string]map[string]string)
+	for localIf := range neighborTbl {
+		device := GetFieldValueString(neighborTbl, localIf, "", "name")
+		if device == "" {
+			continue
+		}
+		remotePort := GetFieldValueString(neighborTbl, localIf, "None", "port")
+		if remotePort == "" {
+			remotePort = "None"
+		}
+
+		loopback := GetFieldValueString(metaTbl, device, "None", "lo_addr")
+		if loopback == "" {
+			loopback = "None"
+		}
+		mgmt := GetFieldValueString(metaTbl, device, "None", "mgmt_addr")
+		if mgmt == "" {
+			mgmt = "None"
+		}
+		ntype := GetFieldValueString(metaTbl, device, "None", "type")
+		if ntype == "" {
+			ntype = "None"
+		}
+
+		displayIf := GetInterfaceNameForDisplay(localIf)
+
+		out[displayIf] = map[string]string{
+			"Neighbor":         device,
+			"NeighborPort":     remotePort,
+			"NeighborLoopback": loopback,
+			"NeighborMgmt":     mgmt,
+			"NeighborType":     ntype,
+		}
+	}
+
+	return json.Marshal(out)
+}

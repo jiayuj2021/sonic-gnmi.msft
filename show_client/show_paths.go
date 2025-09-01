@@ -282,4 +282,9 @@ func init() {
 		nil,
 		showCmdOptionInterface,
 	)
+	sdc.RegisterCliPath(
+		[]string{"SHOW", "interface", "neighbor", "expected"},
+		getInterfaceNeighborExpected,
+		nil,
+	)
 }
