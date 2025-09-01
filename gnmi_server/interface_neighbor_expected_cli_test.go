@@ -3,6 +3,7 @@ package gnmi
 // Tests SHOW interface neighbor expected (JSON output)
 
 import (
+	"crypto/tls"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 
 	show_client "github.com/sonic-net/sonic-gnmi/show_client"
 )
@@ -33,7 +35,9 @@ func TestShowInterfaceNeighborExpected(t *testing.T) {
 	defer s.ForceStop()
 	defer ResetDataSetsAndMappings(t)
 
-	conn, err := grpc.Dial(TargetAddr, grpc.WithInsecure())
+	tlsConfig := &tls.Config{InsecureSkipVerify: true}
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))}
+	conn, err := grpc.Dial(TargetAddr, opts...)
 	if err != nil {
 		t.Fatalf("Dial failed: %v", err)
 	}
@@ -48,67 +52,74 @@ func TestShowInterfaceNeighborExpected(t *testing.T) {
 	neighborOnlyFile := "../testdata/DEVICE_NEIGHBOR_EXPECTED_NO_META.txt"
 
 	const (
-		expectedEmpty = `{}`
-
-		expectedSingle = `{"Ethernet2":{"neighbor":"DEVICE01T1","neighbor_port":"Ethernet1","neighbor_loopback":"10.1.1.1","neighbor_mgmt":"192.0.2.10","neighbor_type":"BackEndLeafRouter"}}`
-
-		expectedMissingMeta = `{"Ethernet4":{"neighbor":"DEVICE02T1","neighbor_port":"Ethernet9","neighbor_loopback":"None","neighbor_mgmt":"None","neighbor_type":"None"}}`
+		expectedEmpty       = `{}`
+		expectedSingle      = `{"Ethernet2":{"Neighbor":"DEVICE01T1","NeighborPort":"Ethernet1","NeighborLoopback":"10.1.1.1","NeighborMgmt":"192.0.2.10","NeighborType":"BackEndLeafRouter"}}`
+		expectedMissingMeta = `{"Ethernet4":{"Neighbor":"DEVICE02T1","NeighborPort":"Ethernet9","NeighborLoopback":"None","NeighborMgmt":"None","NeighborType":"None"}}`
 	)
 
 	tests := []struct {
 		desc       string
+		init       func()
 		textPbPath string
 		wantCode   codes.Code
-		wantResp   string
+		wantVal    []byte
 		valTest    bool
-		testInit   func()
-		mockPatch  func() *gomonkey.Patches
 	}{
 		{
 			desc: "no data",
+			init: func() {
+				FlushDataSet(t, ConfigDbNum)
+			},
 			textPbPath: `
               elem: <name: "interface">
               elem: <name: "neighbor">
               elem: <name: "expected">
             `,
 			wantCode: codes.OK,
-			wantResp: expectedEmpty,
+			wantVal:  []byte(expectedEmpty),
 			valTest:  true,
-			testInit: func() { FlushDataSet(t, ConfigDbNum) },
 		},
 		{
 			desc: "single neighbor (datasets)",
-			textPbPath: `
-              elem: <name: "interface">
-              elem: <name: "neighbor">
-              elem: <name: "expected">
-            `,
-			wantCode: codes.OK,
-			wantResp: expectedSingle,
-			valTest:  true,
-			testInit: func() {
+			init: func() {
 				FlushDataSet(t, ConfigDbNum)
 				AddDataSet(t, ConfigDbNum, neighborFile)
 				AddDataSet(t, ConfigDbNum, neighborMetaFile)
 			},
-		},
-		{
-			desc: "missing metadata defaults (datasets)",
 			textPbPath: `
               elem: <name: "interface">
               elem: <name: "neighbor">
               elem: <name: "expected">
             `,
 			wantCode: codes.OK,
-			wantResp: expectedMissingMeta,
+			wantVal:  []byte(expectedSingle),
 			valTest:  true,
-			testInit: func() {
+		},
+		{
+			desc: "missing metadata defaults (datasets)",
+			init: func() {
 				FlushDataSet(t, ConfigDbNum)
 				AddDataSet(t, ConfigDbNum, neighborOnlyFile)
 			},
+			textPbPath: `
+              elem: <name: "interface">
+              elem: <name: "neighbor">
+              elem: <name: "expected">
+            `,
+			wantCode: codes.OK,
+			wantVal:  []byte(expectedMissingMeta),
+			valTest:  true,
 		},
 		{
 			desc: "GetMapFromQueries error (neighbor)",
+			init: func() {
+				FlushDataSet(t, ConfigDbNum)
+				patch := gomonkey.ApplyFunc(show_client.GetMapFromQueries,
+					func(q [][]string) (map[string]interface{}, error) {
+						return nil, fmt.Errorf("injected neighbor error")
+					})
+				t.Cleanup(func() { patch.Reset() })
+			},
 			textPbPath: `
               elem: <name: "interface">
               elem: <name: "neighbor">
@@ -116,34 +127,16 @@ func TestShowInterfaceNeighborExpected(t *testing.T) {
             `,
 			wantCode: codes.NotFound,
 			valTest:  false,
-			testInit: func() { FlushDataSet(t, ConfigDbNum) },
-			mockPatch: func() *gomonkey.Patches {
-				return gomonkey.ApplyFunc(show_client.GetMapFromQueries,
-					func(q [][]string) (map[string]interface{}, error) {
-						return nil, fmt.Errorf("injected neighbor error")
-					})
-			},
 		},
 	}
 
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
-			if tc.testInit != nil {
-				tc.testInit()
+			if tc.init != nil {
+				tc.init()
 			}
-			var patches *gomonkey.Patches
-			if tc.mockPatch != nil {
-				patches = tc.mockPatch()
-			}
-			if patches != nil {
-				defer patches.Reset()
-			}
-			wantVal := []byte(nil)
-			if tc.valTest {
-				wantVal = []byte(tc.wantResp)
-			}
-			runTestGet(t, ctx, gClient, "SHOW", tc.textPbPath, tc.wantCode, wantVal, tc.valTest)
+			runTestGet(t, ctx, gClient, "SHOW", tc.textPbPath, tc.wantCode, tc.wantVal, tc.valTest)
 		})
 	}
 }
