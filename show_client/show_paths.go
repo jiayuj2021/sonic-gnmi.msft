@@ -110,6 +110,7 @@ func init() {
 		1,
 		nil,
 		showCmdOptionInterface, // TODO: Take as arg not option
+		showCmdOptionSonicCliIfaceMode,
 		sdc.UnimplementedOption(showCmdOptionNamespace),
 		showCmdOptionDisplay,
 	)
@@ -173,6 +174,7 @@ func init() {
 		1,
 		nil,
 		showCmdOptionInterface, // TODO: Take as arg not option
+		showCmdOptionSonicCliIfaceMode,
 	)
 	sdc.RegisterCliPath(
 		[]string{"SHOW", "interfaces", "neighbor", "expected"},
@@ -182,6 +184,7 @@ func init() {
 		1,
 		nil,
 		showCmdOptionInterface, // TODO: Take as arg not option
+		showCmdOptionSonicCliIfaceMode,
 	)
 	sdc.RegisterCliPath(
 		[]string{"SHOW", "interfaces", "naming_mode"},
@@ -191,6 +194,7 @@ func init() {
 		0,
 		nil,
 		showCmdOptionVerbose,
+		showCmdOptionSonicCliIfaceMode,
 	)
 	sdc.RegisterCliPath(
 		[]string{"SHOW", "interfaces", "status"},
@@ -210,7 +214,7 @@ func init() {
 		0,
 		0,
 		nil,
-		showCmdOptionInterface, // TODO: CLI doesnt support
+		showCmdOptionSonicCliIfaceMode,
 	)
 	sdc.RegisterCliPath(
 		[]string{"SHOW", "interfaces", "switchport", "status"},
@@ -219,7 +223,7 @@ func init() {
 		0,
 		0,
 		nil,
-		showCmdOptionInterface, // CLI doesnt support
+		showCmdOptionSonicCliIfaceMode,
 	)
 	sdc.RegisterCliPath(
 		[]string{"SHOW", "interfaces", "transceiver", "error-status"},

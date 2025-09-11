@@ -1002,6 +1002,7 @@ func getInterfaceStatus(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error)
 func getInterfaceAlias(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
 	// TODO
 	intf, _ := options["interface"].String()
+	namingMode, _ := options[SonicCliIfaceMode].String()
 
 	// Read CONFIG_DB.PORT
 	queries := [][]string{{"CONFIG_DB", "PORT"}}
@@ -1023,6 +1024,12 @@ func getInterfaceAlias(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) 
 
 	// If a specific interface was requested, accept port name
 	if intf != "" {
+		intf, err := TryConvertInterfaceNameFromAlias(intf, namingMode)
+		if err != nil {
+			log.Errorf("Error: %v", err)
+			return nil, err
+		}
+
 		name := intf
 		if _, ok := nameToAlias[name]; !ok {
 			return nil, fmt.Errorf("Invalid interface name %s", name)
@@ -1042,8 +1049,7 @@ func getInterfaceAlias(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) 
 }
 
 func getInterfaceSwitchportConfig(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
-	// TODO: Need revirw as show cli doesnt support any arguments
-	intf, _ := options["interface"].String()
+	namingMode, _ := options[SonicCliIfaceMode].String()
 
 	// Read CONFIG_DB tables
 	portTbl, err := GetMapFromQueries([][]string{{"CONFIG_DB", "PORT"}})
@@ -1080,21 +1086,6 @@ func getInterfaceSwitchportConfig(args sdc.CmdArgs, options sdc.OptionMap) ([]by
 	}
 	keys := append(ports, portchannels...)
 	keys = natsortInterfaces(keys)
-
-	// Optionally filter by interface
-	if intf != "" {
-		found := false
-		for _, k := range keys {
-			if k == intf {
-				found = true
-				keys = []string{intf}
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("Got unexpected extra argument %s", intf)
-		}
-	}
 
 	// Build VLAN membership maps
 	untaggedMap := make(map[string][]string)
@@ -1128,7 +1119,7 @@ func getInterfaceSwitchportConfig(args sdc.CmdArgs, options sdc.OptionMap) ([]by
 		mode := GetInterfaceSwitchportMode(portTbl, portChannelTbl, vlanMemberTbl, k)
 
 		switchportConfig = append(switchportConfig, map[string]string{
-			"Interface": GetInterfaceNameForDisplay(k),
+			"Interface": GetInterfaceNameForDisplay(k, namingMode),
 			"Mode":      mode,
 			"Untagged":  strings.Join(untagged, ","),
 			"Tagged":    strings.Join(tagged, ","),
@@ -1139,8 +1130,7 @@ func getInterfaceSwitchportConfig(args sdc.CmdArgs, options sdc.OptionMap) ([]by
 }
 
 func getInterfaceSwitchportStatus(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
-	// TODO: CLI discrepancy same as other switchport cmd
-	intf, _ := options["interface"].String()
+	namingMode, _ := options[SonicCliIfaceMode].String()
 
 	// Read CONFIG_DB tables
 	portTbl, err := GetMapFromQueries([][]string{{"CONFIG_DB", "PORT"}})
@@ -1178,28 +1168,13 @@ func getInterfaceSwitchportStatus(args sdc.CmdArgs, options sdc.OptionMap) ([]by
 	keys := append(ports, portchannels...)
 	keys = natsortInterfaces(keys)
 
-	// Optionally filter by interface
-	if intf != "" {
-		found := false
-		for _, k := range keys {
-			if k == intf {
-				found = true
-				keys = []string{intf}
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("Got unexpected extra argument %s", intf)
-		}
-	}
-
 	// Emit switchportStatus
 	switchportStatus := make([]map[string]string, 0, len(keys))
 	for _, k := range keys {
 		mode := GetInterfaceSwitchportMode(portTbl, portChannelTbl, vlanMemberTbl, k)
 
 		switchportStatus = append(switchportStatus, map[string]string{
-			"Interface": GetInterfaceNameForDisplay(k),
+			"Interface": GetInterfaceNameForDisplay(k, namingMode),
 			"Mode":      mode,
 		})
 	}
@@ -1224,6 +1199,7 @@ func IsInterfaceInPortchannel(portchannelMemberTable map[string]interface{}, int
 func getInterfaceFlap(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
 	// TODO
 	intf, _ := options["interface"].String()
+	namingMode, _ := options[SonicCliIfaceMode].String()
 
 	// Query APPL_DB PORT_TABLE
 	queries := [][]string{
@@ -1238,6 +1214,11 @@ func getInterfaceFlap(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
 	// Collect ports (optionally filter by interface)
 	var ports []string
 	if intf != "" {
+		intf, err := TryConvertInterfaceNameFromAlias(intf, namingMode)
+		if err != nil {
+			log.Errorf("Error: %v", err)
+			return nil, err
+		}
 		if _, ok := portTable[intf]; !ok {
 			return nil, fmt.Errorf("Invalid interface name %s", intf)
 		}
@@ -1266,7 +1247,7 @@ func getInterfaceFlap(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
 		lastUp := GetFieldValueString(portTable, p, "Never", "last_up_time")
 
 		rows = append(rows, map[string]string{
-			"Interface":                GetInterfaceNameForDisplay(p),
+			"Interface":                p,
 			"Flap Count":               flapCount,
 			"Admin":                    adminStatus,
 			"Oper":                     operStatus,
@@ -1294,6 +1275,7 @@ func getInterfaceFlap(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
 // 6) "BackEndLeafRouter"
 func getInterfaceNeighborExpected(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
 	// TODO: Supports an interfacename as arg
+	namingMode, _ := options[SonicCliIfaceMode].String()
 	// Fetch DEVICE_NEIGHBOR
 	neighborTbl, err := GetMapFromQueries([][]string{{"CONFIG_DB", "DEVICE_NEIGHBOR"}})
 	if err != nil {
@@ -1332,7 +1314,7 @@ func getInterfaceNeighborExpected(args sdc.CmdArgs, options sdc.OptionMap) ([]by
 			ntype = "None"
 		}
 
-		displayIf := GetInterfaceNameForDisplay(localIf)
+		displayIf := GetInterfaceNameForDisplay(localIf, namingMode)
 
 		out[displayIf] = map[string]string{
 			"Neighbor":         device,
@@ -1347,7 +1329,9 @@ func getInterfaceNeighborExpected(args sdc.CmdArgs, options sdc.OptionMap) ([]by
 }
 
 func getInterfaceNamingMode(args sdc.CmdArgs, options sdc.OptionMap) ([]byte, error) {
-	mode := GetInterfaceNamingMode()
-	namingModeResp := namingModeResponse{NamingMode: mode}
+	namingMode, _ := options[SonicCliIfaceMode].String()
+
+	namingMode = GetInterfaceNamingMode(namingMode)
+	namingModeResp := namingModeResponse{NamingMode: namingMode}
 	return json.Marshal(namingModeResp)
 }
